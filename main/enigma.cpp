@@ -100,7 +100,7 @@ void keyEvent(const eRCKey &key)
 /* Defined in eerror.cpp */
 void setDebugTime(bool enable);
 
-class eMain: public eApplication, public Object
+class eMain: public eApplication, public sigc::trackable
 {
 	eInit init;
 	ePythonConfigQuery config;
@@ -259,17 +259,18 @@ int main(int argc, char **argv)
 			std::string rfilename;
 			snprintf(filename, sizeof(filename), "${datadir}/enigma2/skin_default/spinner/wait%d.png", i + 1);
 			rfilename = eEnv::resolve(filename);
-			loadPNG(wait[i], rfilename.c_str());
 
+			if (::access(rfilename.c_str(), R_OK) < 0)
+				break;
+
+			loadPNG(wait[i], rfilename.c_str());
 			if (!wait[i])
 			{
-				if (!i)
-					eDebug("[MAIN] failed to load %s: %m", rfilename.c_str());
-				else
-					eDebug("[MAIN] found %d spinner!\n", i);
+				eDebug("[MAIN] failed to load %s: %m", rfilename.c_str());
 				break;
 			}
 		}
+		eDebug("[MAIN] found %d spinner!", i);
 		if (i)
 			my_dc->setSpinner(eRect(ePoint(100, 100), wait[0]->size()), wait, i);
 		else
@@ -278,7 +279,7 @@ int main(int argc, char **argv)
 
 	gRC::getInstance()->setSpinnerDC(my_dc);
 
-	eRCInput::getInstance()->keyEvent.connect(slot(keyEvent));
+	eRCInput::getInstance()->keyEvent.connect(sigc::ptr_fun(&keyEvent));
 
 	printf("[MAIN] executing main\n");
 

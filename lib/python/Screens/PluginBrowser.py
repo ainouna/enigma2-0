@@ -1,6 +1,6 @@
 from Screen import Screen
 from Screens.ParentalControlSetup import ProtectedScreen
-from enigma import eConsoleAppContainer, eDVBDB
+from enigma import eConsoleAppContainer, eDVBDB, eTimer
 
 from Components.ActionMap import ActionMap, NumberActionMap
 from Components.config import config, ConfigSubsection, ConfigText
@@ -10,6 +10,7 @@ from Components.Label import Label
 from Components.Language import language
 from Components.Harddisk import harddiskmanager
 from Components.Sources.StaticText import StaticText
+from Components.SystemInfo import SystemInfo, hassoftcaminstalled
 from Components import Ipkg
 from Screens.MessageBox import MessageBox
 from Screens.ChoiceBox import ChoiceBox
@@ -89,6 +90,10 @@ class PluginBrowser(Screen, ProtectedScreen):
 			"0": self.keyNumberGlobal
 		})
 
+		self.number = 0
+		self.nextNumberTimer = eTimer()
+		self.nextNumberTimer.callback.append(self.okbuttonClick)
+
 		self.onFirstExecBegin.append(self.checkWarnings)
 		self.onShown.append(self.updateList)
 		self.onChangedEntry = []
@@ -143,14 +148,27 @@ class PluginBrowser(Screen, ProtectedScreen):
 			self.updateList()
 
 	def keyNumberGlobal(self, number):
-		if number == 0:
+		if number == 0 and self.number == 0:
 			if len(self.list) > 0 and config.misc.pluginbrowser.plugin_order.value != "":
 				self.session.openWithCallback(self.setDefaultList, MessageBox, _("Sort plugins list to default?"), MessageBox.TYPE_YESNO)
 		else:
-			real_number = number - 1
-			if real_number < len(self.list):
-				self["list"].moveToIndex(real_number)
-				self.run()
+			self.number = self.number * 10 + number
+			if self.number and self.number <= len(self.list):
+				if number * 10 > len(self.list) or self.number >= 10:
+					self.okbuttonClick()
+				else:
+					self.nextNumberTimer.start(1400, True)
+			else:
+				self.resetNumberKey()
+
+	def okbuttonClick(self):
+		self["list"].moveToIndex(self.number - 1)
+		self.resetNumberKey()
+		self.run()
+
+	def resetNumberKey(self):
+		self.nextNumberTimer.stop()
+		self.number = 0
 
 	def moveUp(self):
 		self.move(-1)
@@ -234,6 +252,7 @@ class PluginDownloadBrowser(Screen):
 		self.installedplugins = []
 		self.plugins_changed = False
 		self.reload_settings = False
+		self.check_softcams = False
 		self.check_settings = False
 		self.install_settings_name = ''
 		self.remove_settings_name = ''
@@ -280,6 +299,8 @@ class PluginDownloadBrowser(Screen):
 			self["text"].setText(_("Reloading bouquets and services..."))
 			eDVBDB.getInstance().reloadBouquets()
 			eDVBDB.getInstance().reloadServicelist()
+		if self.check_softcams:
+			SystemInfo["HasSoftcamInstalled"] = hassoftcaminstalled()
 		plugins.readPluginList(resolveFilename(SCOPE_PLUGINS))
 		self.container.appClosed.remove(self.runFinished)
 		self.container.dataAvail.remove(self.dataAvail)
@@ -384,6 +405,8 @@ class PluginDownloadBrowser(Screen):
 		self.plugins_changed = True
 		if self["list"].l.getCurrentSelection()[0].name.startswith("settings-"):
 			self.reload_settings = True
+		if self["list"].l.getCurrentSelection()[0].name.startswith("softcams-"):
+			self.check_softcams = True
 		self.expanded = []
 		self.updateList()
 		self["list"].moveToIndex(0)

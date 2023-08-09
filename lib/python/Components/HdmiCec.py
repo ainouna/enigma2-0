@@ -2,6 +2,7 @@ import struct, os, time
 from config import config, ConfigSelection, ConfigYesNo, ConfigSubsection, ConfigText, ConfigCECAddress, ConfigLocations, ConfigDirectory
 from enigma import eHdmiCEC, eActionMap
 from Tools.StbHardware import getFPWasTimerWakeup
+import NavigationInstance
 from enigma import eTimer
 from sys import maxint
 
@@ -46,7 +47,7 @@ cmdList = {
 	}
 
 config.hdmicec = ConfigSubsection()
-config.hdmicec.enabled = ConfigYesNo(default = True)
+config.hdmicec.enabled = ConfigYesNo(default = False)
 config.hdmicec.control_tv_standby = ConfigYesNo(default = True)
 config.hdmicec.control_tv_wakeup = ConfigYesNo(default = True)
 config.hdmicec.report_active_source = ConfigYesNo(default = True)
@@ -82,6 +83,7 @@ config.hdmicec.debug = ConfigSelection(default = "0", choices = [("0", _("Disabl
 config.hdmicec.bookmarks = ConfigLocations(default=[LOGPATH])
 config.hdmicec.log_path = ConfigDirectory(LOGPATH)
 config.hdmicec.next_boxes_detect = ConfigYesNo(default=False)
+config.hdmicec.sourceactive_zaptimers = ConfigYesNo(default=False)
 
 
 class HdmiCec:
@@ -114,8 +116,13 @@ class HdmiCec:
 		eActionMap.getInstance().bindAction('', -maxint - 1, self.keyEvent)
 		config.hdmicec.volume_forwarding.addNotifier(self.configVolumeForwarding)
 		config.hdmicec.enabled.addNotifier(self.configVolumeForwarding)
-		if config.hdmicec.enabled.value and config.hdmicec.handle_deepstandby_events.value and not getFPWasTimerWakeup():
-			self.onLeaveStandby()
+		if config.hdmicec.enabled.value:
+			if config.hdmicec.report_active_menu.value:
+				if config.hdmicec.report_active_source.value and NavigationInstance.instance and not NavigationInstance.instance.isRestartUI():
+					self.sendMessage(0, "sourceinactive")
+				self.sendMessage(0, "menuactive")
+			if config.hdmicec.handle_deepstandby_events.value and not getFPWasTimerWakeup():
+				self.onLeaveStandby()
 
 	def getPhysicalAddress(self):
 		physicaladdress = eHdmiCEC.getInstance().getPhysicalAddress()

@@ -226,6 +226,7 @@ class InfoBarShowHide(InfoBarScreenSaver):
 	STATE_SHOWING = 2
 	STATE_SHOWN = 3
 	FLAG_HIDE_VBI = 512
+	FLAG_CENTER_DVB_SUBS = 2048
 
 	def __init__(self):
 		self["ShowHideActions"] = ActionMap( ["InfobarShowHideActions"] ,
@@ -1773,13 +1774,21 @@ class InfoBarShowMovies:
 # note that a timeshift can be enabled ("recording") and
 # activated (currently time-shifting).
 
-class InfoBarTimeshift:
+class InfoBarTimeshift(InfoBarSeek):
 	def __init__(self):
 		self["TimeshiftActions"] = HelpableActionMap(self, "InfobarTimeshiftActions",
 			{
 				"timeshiftStart": (self.startTimeshift, _("Start timeshift")),  # the "yellow key"
-				"timeshiftStop": (self.stopTimeshift, _("Stop timeshift"))      # currently undefined :), probably 'TV'
-			}, prio=1)
+				"timeshiftStop": (self.stopTimeshift, _("Stop timeshift")),      # currently undefined :), probably 'TV'
+				"seekFwdManual": (self.seekFwdManual, _("Seek forward (enter time)")),
+				"seekBackManual": (self.seekBackManual, _("Seek backward (enter time)")),
+				"seekdef:1": (boundFunction(self.seekdef,1), _("Seek")),
+				"seekdef:3": (boundFunction(self.seekdef,3), _("Seek")),
+				"seekdef:4": (boundFunction(self.seekdef,4), _("Seek")),
+				"seekdef:6": (boundFunction(self.seekdef,6), _("Seek")),
+				"seekdef:7": (boundFunction(self.seekdef,7), _("Seek")),
+				"seekdef:9": (boundFunction(self.seekdef,9), _("Seek")),
+			}, prio=0)
 		self["TimeshiftActivateActions"] = ActionMap(["InfobarTimeshiftActivateActions"],
 			{
 				"timeshiftActivateEnd": self.activateTimeshiftEnd, # something like "rewind key"
@@ -1805,6 +1814,16 @@ class InfoBarTimeshift:
 				iPlayableService.evEnd: self.__serviceEnd
 			})
 
+	def seekdef(self, key):
+		if self.seekstate == self.SEEK_STATE_PLAY:
+			return 0 # trade as unhandled action
+		time = (-config.seek.selfdefined_13.value, False, config.seek.selfdefined_13.value,
+			-config.seek.selfdefined_46.value, False, config.seek.selfdefined_46.value,
+			-config.seek.selfdefined_79.value, False, config.seek.selfdefined_79.value)[key-1]
+		self.doSeekRelative(time * 90000)
+		self.pvrStateDialog.show()
+		return 1
+
 	def getTimeshift(self):
 		service = self.session.nav.getCurrentService()
 		return service and service.timeshift()
@@ -1817,6 +1836,25 @@ class InfoBarTimeshift:
 		ts = self.getTimeshift()
 		return ts and ts.isTimeshiftActive()
 
+	def playpauseStreamService(self):
+		service = self.session.nav.getCurrentService()
+		playingref = self.session.nav.getCurrentlyPlayingServiceReference()
+		if not playingref or playingref.type < eServiceReference.idUser:
+			return 0
+		if service and service.streamed():
+			pauseable = service.pause()
+			if pauseable:
+				if self.seekstate == self.SEEK_STATE_PLAY:
+					pauseable.pause()
+					self.pvrStateDialog.show()
+					self.seekstate = self.SEEK_STATE_PAUSE
+				else:
+					pauseable.unpause()
+					self.pvrStateDialog.hide()
+					self.seekstate = self.SEEK_STATE_PLAY
+				return
+		return 0
+
 	def startTimeshift(self, pauseService = True):
 		print "enable timeshift"
 		ts = self.getTimeshift()
@@ -1824,7 +1862,7 @@ class InfoBarTimeshift:
 			if not pauseService and not int(config.usage.timeshift_start_delay.value):
 				self.session.open(MessageBox, _("Timeshift not possible!"), MessageBox.TYPE_ERROR, simple = True)
 			print "no ts interface"
-			return 0
+			return self.playpauseStreamService()
 
 		if ts.isTimeshiftEnabled():
 			print "hu, timeshift already enabled?"
@@ -1918,7 +1956,9 @@ class InfoBarTimeshift:
 		begin_date = strftime("%Y%m%d %H%M", localtime(time()))
 		filename = begin_date + " - " + service_name
 
-		if config.recording.filename_composition.value == "short":
+		if config.recording.filename_composition.value == "event":
+			filename = "%s - %s_%s" % (info["name"], strftime("%Y%m%d %H%M",localtime(time())), service_name)
+		elif config.recording.filename_composition.value == "short":
 			filename = strftime("%Y%m%d", localtime(time())) + " - " + info["name"]
 		elif config.recording.filename_composition.value == "long":
 			filename += " - " + info["name"] + " - " + info["description"]
@@ -2066,7 +2106,7 @@ class InfoBarExtensions:
 
 	def __init__(self):
 		self.list = []
-		self.addExtension((lambda: _("Softcam Setup"), self.openSoftcamSetup, lambda: config.misc.softcam_setup.extension_menu.value), "1")
+		self.addExtension((lambda: _("Softcam Setup"), self.openSoftcamSetup, lambda: config.misc.softcam_setup.extension_menu.value and SystemInfo["HasSoftcamInstalled"]), "1")
 		self["InstantExtensionsActions"] = HelpableActionMap(self, "InfobarExtensions",
 			{
 				"extensions": (self.showExtensionSelection, _("Show extensions...")),
@@ -3265,6 +3305,19 @@ class InfoBarSubtitleSupport(object):
 		else:
 			return 0
 
+	def doCenterDVBSubs(self):
+		service = self.session.nav.getCurrentlyPlayingServiceReference()
+		servicepath = service and service.getPath()
+		if servicepath and servicepath.startswith("/"):
+			if service.toString().startswith("1:"):
+				info = eServiceCenter.getInstance().info(service)
+				service = info and info.getInfoString(service, iServiceInformation.sServiceref)
+				config.subtitles.dvb_subtitles_centered.value = service and eDVBDB.getInstance().getFlag(eServiceReference(service)) & self.FLAG_CENTER_DVB_SUBS and True
+				return
+		service = self.session.nav.getCurrentService()
+		info = service and service.info()
+		config.subtitles.dvb_subtitles_centered.value = info and info.getInfo(iServiceInformation.sCenterDVBSubs) and True
+
 	def __serviceChanged(self):
 		if self.selected_subtitle:
 			self.selected_subtitle = None
@@ -3276,6 +3329,7 @@ class InfoBarSubtitleSupport(object):
 			cachedsubtitle = subtitle and subtitle.getCachedSubtitle()
 			if cachedsubtitle:
 				self.enableSubtitle(cachedsubtitle)
+				self.doCenterDVBSubs()
 
 	def enableSubtitle(self, selectedSubtitle):
 		subtitle = self.getCurrentServiceSubtitle()
@@ -3283,6 +3337,7 @@ class InfoBarSubtitleSupport(object):
 		if subtitle and self.selected_subtitle:
 			subtitle.enableSubtitles(self.subtitle_window.instance, self.selected_subtitle)
 			self.subtitle_window.show()
+			self.doCenterDVBSubs()
 		else:
 			if subtitle:
 				subtitle.disableSubtitles(self.subtitle_window.instance)

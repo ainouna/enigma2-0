@@ -158,6 +158,21 @@ int eDVBTransponderData::getSystem() const
 	return -1;
 }
 
+int eDVBTransponderData::getIsId() const
+{
+	return -1;
+}
+
+int eDVBTransponderData::getPLSMode() const
+{
+	return -1;
+}
+
+int eDVBTransponderData::getPLSCode() const
+{
+	return -1;
+}
+
 int eDVBTransponderData::getBandwidth() const
 {
 	return -1;
@@ -320,6 +335,33 @@ int eDVBSatelliteTransponderData::getSystem() const
 	case SYS_DVBS: return eDVBFrontendParametersSatellite::System_DVB_S;
 	case SYS_DVBS2: return eDVBFrontendParametersSatellite::System_DVB_S2;
 	}
+}
+
+int eDVBSatelliteTransponderData::getIsId() const
+{
+	if (originalValues) return transponderParameters.is_id;
+
+	unsigned int stream_id = getProperty(DTV_STREAM_ID);
+	if (stream_id == NO_STREAM_ID_FILTER) return transponderParameters.is_id;
+	return stream_id & 0xFF;
+}
+
+int eDVBSatelliteTransponderData::getPLSMode() const
+{
+	if (originalValues) return transponderParameters.pls_mode;
+
+	unsigned int stream_id = getProperty(DTV_STREAM_ID);
+	if (stream_id == NO_STREAM_ID_FILTER) return transponderParameters.pls_mode;
+	return (stream_id >> 26) & 0x3;
+}
+
+int eDVBSatelliteTransponderData::getPLSCode() const
+{
+	if (originalValues) return transponderParameters.pls_code;
+
+	unsigned int stream_id = getProperty(DTV_STREAM_ID);
+	if (stream_id == NO_STREAM_ID_FILTER) return transponderParameters.pls_code;
+	return (stream_id >> 8) & 0x3FFFF;
 }
 
 DEFINE_REF(eDVBCableTransponderData);

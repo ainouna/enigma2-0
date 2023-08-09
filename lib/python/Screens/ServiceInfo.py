@@ -1,4 +1,3 @@
-from Components.HTMLComponent import HTMLComponent
 from Components.GUIComponent import GUIComponent
 from Screen import Screen
 from Components.ActionMap import ActionMap
@@ -23,7 +22,7 @@ TYPE_VALUE_BITRATE = 8
 def to_unsigned(x):
 	return x & 0xFFFFFFFF
 
-def ServiceInfoListEntry(a, b, valueType=TYPE_TEXT, param=4):
+def ServiceInfoListEntry(a, b="", valueType=TYPE_TEXT, param=4):
 	print "b:", b
 	if not isinstance(b, str):
 		if valueType == TYPE_VALUE_HEX:
@@ -47,14 +46,21 @@ def ServiceInfoListEntry(a, b, valueType=TYPE_TEXT, param=4):
 	x, y, w, h = skin.parameters.get("ServiceInfo",(0, 0, 300, 30))
 	xa, ya, wa, ha = skin.parameters.get("ServiceInfoLeft",(0, 0, 300, 25))
 	xb, yb, wb, hb = skin.parameters.get("ServiceInfoRight",(300, 0, 600, 25))
-	return [
-		#PyObject *type, *px, *py, *pwidth, *pheight, *pfnt, *pstring, *pflags;
-		(eListboxPythonMultiContent.TYPE_TEXT, x, y, w, h, 0, RT_HALIGN_LEFT, ""),
-		(eListboxPythonMultiContent.TYPE_TEXT, xa, ya, wa, ha, 0, RT_HALIGN_LEFT, a),
-		(eListboxPythonMultiContent.TYPE_TEXT, xb, yb, wb, hb, 0, RT_HALIGN_LEFT, b)
-	]
+	if b:
+		return [
+			#PyObject *type, *px, *py, *pwidth, *pheight, *pfnt, *pstring, *pflags;
+			(eListboxPythonMultiContent.TYPE_TEXT, x, y, w, h, 0, RT_HALIGN_LEFT, ""),
+			(eListboxPythonMultiContent.TYPE_TEXT, xa, ya, wa, ha, 0, RT_HALIGN_LEFT, a),
+			(eListboxPythonMultiContent.TYPE_TEXT, xb, yb, wb, hb, 0, RT_HALIGN_LEFT, b)
+		]
+	else:
+		return [
+			#PyObject *type, *px, *py, *pwidth, *pheight, *pfnt, *pstring, *pflags;
+			(eListboxPythonMultiContent.TYPE_TEXT, x, y, w, h, 0, RT_HALIGN_LEFT, ""),
+			(eListboxPythonMultiContent.TYPE_TEXT, xa, ya, wa + wb, ha + hb, 0, RT_HALIGN_LEFT, a)
+		]
 
-class ServiceInfoList(HTMLComponent, GUIComponent):
+class ServiceInfoList(GUIComponent):
 	def __init__(self, source):
 		GUIComponent.__init__(self)
 		self.l = eListboxPythonMultiContent()
@@ -81,6 +87,7 @@ class ServiceInfo(Screen):
 			"ok": self.close,
 			"cancel": self.close,
 			"red": self.close,
+			"green": self.ShowECMInformation,
 			"yellow": self.ShowServiceInformation,
 			"blue": self.ShowTransponderInformation
 		}, -1)
@@ -88,6 +95,7 @@ class ServiceInfo(Screen):
 		self["infolist"] = ServiceInfoList([])
 		self.setTitle(_("Service info"))
 		self["key_red"] = self["red"] = Label(_("Exit"))
+		self["key_green"] = self["green"] = Label(_("ECM Info"))
 
 		self.transponder_info = self.info = self.feinfo = None
 		play_service = session.nav.getCurrentlyPlayingServiceReference()
@@ -206,7 +214,10 @@ class ServiceInfo(Screen):
 					(_("Orbital position"), frontendData["orbital_position"], TYPE_VALUE_DEC),
 					(_("Frequency & Polarization"), "%s MHz" % (frontendData.get("frequency", 0) / 1000) + " - " + frontendData["polarization"], TYPE_TEXT),
 					(_("Symbol rate & FEC"), "%s KSymb/s" % (frontendData.get("symbol_rate", 0) / 1000) + " - " + frontendData["fec_inner"], TYPE_TEXT),
-					(_("Inversion, Pilot & Roll-off"), frontendData["inversion"] + " - " + str(frontendData.get("pilot", None)) + " - " + str(frontendData.get("rolloff", None)), TYPE_TEXT))
+					(_("Inversion, Pilot & Roll-off"), frontendData["inversion"] + " - " + str(frontendData.get("pilot", None)) + " - " + str(frontendData.get("rolloff", None)), TYPE_TEXT),
+					(_("Input Stream ID"), frontendData.get("is_id", 0), TYPE_VALUE_DEC),
+					(_("PLS Mode"), frontendData.get("pls_mode", None), TYPE_TEXT),
+					(_("PLS Code"), frontendData.get("pls_code", 0), TYPE_VALUE_DEC))
 			elif frontendDataOrg["tuner_type"] == "DVB-C":
 				return (tuner,
 					(_("Modulation"), frontendData["modulation"], TYPE_TEXT),
@@ -215,7 +226,7 @@ class ServiceInfo(Screen):
 					(_("Inversion"), frontendData["inversion"], TYPE_TEXT))
 			elif frontendDataOrg["tuner_type"] == "DVB-T":
 				return (tuner,
-					(_("Frequency & Channel"), "%.3f MHz" % ((frontendData.get("frequency", 0) / 1000) / 1000.0) + " - Ch. " + getChannelNumber(frontendData["frequency"], frontendData["tuner_number"]), TYPE_TEXT),
+					(_("Frequency & Channel"), "%.3f MHz" % ((frontendData.get("frequency", 0) / 1000) / 1000.0) + " - " + frontendData["channel"], TYPE_TEXT),
 					(_("Inversion & Bandwidth"), frontendData["inversion"] + " - " + str(frontendData["bandwidth"]), TYPE_TEXT),
 					(_("Code R. LP-HP & Guard Int."), frontendData["code_rate_lp"] + " - " + frontendData["code_rate_hp"] + " - " + frontendData["guard_interval"], TYPE_TEXT),
 					(_("Constellation & FFT mode"), frontendData["constellation"] + " - " + frontendData["transmission_mode"], TYPE_TEXT),
@@ -247,3 +258,35 @@ class ServiceInfo(Screen):
 				v = _("N/A")
 			return v
 		return ""
+
+	def ShowECMInformation(self):
+		if self.info:
+			from Components.Converter.PliExtraInfo import caid_data
+			self["Title"].text = _("Service info - ECM Info")
+			tlist = []
+			for caid in sorted(set(self.info.getInfoObject(iServiceInformation.sCAIDPIDs)), key=lambda x: (x[0], x[1])):
+				CaIdDescription = _("Undefined")
+				extra_info = ""
+				provid = ""
+				for caid_entry in caid_data:
+					if int(caid_entry[0], 16) <= caid[0] <= int(caid_entry[1], 16):
+						CaIdDescription = caid_entry[2]
+						break
+				if caid[2]:
+					if CaIdDescription == "Seca":
+						provid = ",".join([caid[2][i:i+4] for i in range(0, len(caid[2]), 30)])
+					if CaIdDescription == "Nagra":
+						provid = caid[2][-4:]
+					if CaIdDescription == "Via":
+						provid = caid[2][-6:]
+					if provid:
+						extra_info = "provid=%s" % provid
+					else:
+						extra_info = "extra data=%s" % caid[2]
+				from Tools.GetEcmInfo import GetEcmInfo
+				ecmdata = GetEcmInfo().getEcmData()
+				color = "\c00??;?00" if caid[0] == int(ecmdata[1], 16) and (caid[1] == int(ecmdata[3], 16) or str(int(ecmdata[2], 16)) in provid) else ""
+				tlist.append(ServiceInfoListEntry("%sECMPid %04X (%d) %04X-%s %s" % (color, caid[1], caid[1], caid[0], CaIdDescription, extra_info)))
+			if not tlist:
+				tlist.append(ServiceInfoListEntry(_("No ECMPids available (FTA Service)")))
+			self["infolist"].l.setList(tlist)

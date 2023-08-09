@@ -15,7 +15,6 @@ from Components.ProgressBar import ProgressBar
 from Tools.StbHardware import getFPVersion
 from enigma import eTimer, eLabel, eConsoleAppContainer
 
-from Components.HTMLComponent import HTMLComponent
 from Components.GUIComponent import GUIComponent
 import skin, os
 
@@ -28,25 +27,37 @@ class About(Screen):
 		AboutText = _("Hardware: ") + about.getHardwareTypeString() + "\n"
 		AboutText += _("CPU: ") + about.getCPUInfoString() + "\n"
 		AboutText += _("Image: ") + about.getImageTypeString() + "\n"
-		AboutText += _("Installed: ") + about.getFlashDateString() + "\n"
+		AboutText += _("Build date: ") + about.getBuildDateString() + "\n"
+
+		# [WanWizard] Removed until we find a reliable way to determine the installation date
+		# AboutText += _("Installed: ") + about.getFlashDateString() + "\n"
+
+		# [WanWizard] No longer that relevant as we now have an accurate build date
+		# as I'm not sure this variable isn't used elsewhere, I haven't removed it
+		ImageVersion = _("Last upgrade: ") + about.getImageVersionString()
+		self["ImageVersion"] = StaticText(ImageVersion)
+		# AboutText += ImageVersion + "\n"
+
+		EnigmaVersion = about.getEnigmaVersionString().rsplit("-", 2)
+		if len(EnigmaVersion) == 3:
+			EnigmaVersion = EnigmaVersion[0] + " " + EnigmaVersion[2] + "-" + EnigmaVersion[1]
+		else:
+			EnigmaVersion = " ".join(EnigmaVersion)
+		EnigmaVersion = _("Enigma version: ") + EnigmaVersion
+		self["EnigmaVersion"] = StaticText(EnigmaVersion)
+		AboutText += "\n" + EnigmaVersion + "\n"
+
 		AboutText += _("Kernel version: ") + about.getKernelVersionString() + "\n"
 
-		EnigmaVersion = "Enigma: " + about.getEnigmaVersionString()
-		self["EnigmaVersion"] = StaticText(EnigmaVersion)
-		AboutText += EnigmaVersion + "\n"
-		AboutText += _("Enigma (re)starts: %d\n") % config.misc.startCounter.value
+		AboutText += _("DVB driver version: ") + about.getDriverInstalledDate() + "\n"
 
-		GStreamerVersion = "GStreamer: " + about.getGStreamerVersionString().replace("GStreamer","")
+		GStreamerVersion = _("GStreamer version: ") + about.getGStreamerVersionString().replace("GStreamer","")
 		self["GStreamerVersion"] = StaticText(GStreamerVersion)
 		AboutText += GStreamerVersion + "\n"
 
-		ImageVersion = _("Last upgrade: ") + about.getImageVersionString()
-		self["ImageVersion"] = StaticText(ImageVersion)
-		AboutText += ImageVersion + "\n"
-
-		AboutText += _("DVB drivers: ") + about.getDriverInstalledDate() + "\n"
-
 		AboutText += _("Python version: ") + about.getPythonVersionString() + "\n"
+
+		AboutText += _("Enigma (re)starts: %d\n") % config.misc.startCounter.value
 
 		fp_version = getFPVersion()
 		if fp_version is None:
@@ -60,7 +71,7 @@ class About(Screen):
 		self["TunerHeader"] = StaticText(_("Detected NIMs:"))
 		AboutText += "\n" + _("Detected NIMs:") + "\n"
 
-		nims = nimmanager.nimList(showFBCTuners=False)
+		nims = nimmanager.nimListCompressed()
 		for count in range(len(nims)):
 			if count < 4:
 				self["Tuner" + str(count)] = StaticText(nims[count])
@@ -176,10 +187,16 @@ class CommitInfo(Screen):
 
 		self["key_red"] = Button(_("Cancel"))
 
+		# get the branch to display from the Enigma version
+		try:
+			branch = "?sha=" + "-".join(about.getEnigmaVersionString().split("-")[3:])
+		except:
+			branch = ""
+
 		self.project = 0
 		self.projects = [
-			("https://api.github.com/repos/openpli/enigma2/commits", "Enigma2"),
-			("https://api.github.com/repos/openpli/openpli-oe-core/commits", "Openpli Oe Core"),
+			("https://api.github.com/repos/openpli/enigma2/commits" + branch, "Enigma2"),
+			("https://api.github.com/repos/openpli/openpli-oe-core/commits" + branch, "Openpli Oe Core"),
 			("https://api.github.com/repos/openpli/enigma2-plugins/commits", "Enigma2 Plugins"),
 			("https://api.github.com/repos/openpli/aio-grab/commits", "Aio Grab"),
 			("https://api.github.com/repos/openpli/gst-plugin-dvbmediasink/commits", "Gst Plugin Dvbmediasink"),
@@ -311,7 +328,7 @@ class MemoryInfo(Screen):
 		open("/proc/sys/vm/drop_caches", "w").write("3")
 		self.getMemoryInfo()
 
-class MemoryInfoSkinParams(HTMLComponent, GUIComponent):
+class MemoryInfoSkinParams(GUIComponent):
 	def __init__(self):
 		GUIComponent.__init__(self)
 		self.rows_in_column = 25

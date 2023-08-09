@@ -21,7 +21,7 @@
 #include <lib/dvb/encoder.h>
 
 eStreamClient::eStreamClient(eStreamServer *handler, int socket, const std::string remotehost)
- : parent(handler), encoderFd(-1), streamFd(socket), streamThread(NULL), m_remotehost(remotehost)
+ : parent(handler), encoderFd(-1), streamFd(socket), streamThread(NULL), m_remotehost(remotehost), m_timeout(eTimer::create(eApp))
 {
 	running = false;
 }
@@ -46,6 +46,7 @@ void eStreamClient::start()
 {
 	rsn = eSocketNotifier::create(eApp, streamFd, eSocketNotifier::Read);
 	CONNECT(rsn->activated, eStreamClient::notifier);
+	CONNECT(m_timeout->timeout, eStreamClient::stopStream);
 }
 
 void eStreamClient::set_socket_option(int fd, int optid, int option)
@@ -82,6 +83,7 @@ void eStreamClient::notifier(int what)
 	if (request.substr(0, 5) == "GET /")
 	{
 		size_t pos;
+		size_t posdur;
 		if (eConfigManager::getConfigBoolValue("config.streaming.authentication"))
 		{
 			bool authenticated = false;
@@ -162,6 +164,7 @@ void eStreamClient::notifier(int what)
 				pos = serviceref.find('?');
 				if (pos == std::string::npos)
 				{
+					eDebug("[eDVBServiceStream] stream ref: %s", serviceref.c_str());
 					if (eDVBServiceStream::start(serviceref.c_str(), streamFd) >= 0)
 					{
 						running = true;
@@ -174,7 +177,25 @@ void eStreamClient::notifier(int what)
 					request = serviceref.substr(pos);
 					serviceref = serviceref.substr(0, pos);
 					pos = request.find("?bitrate=");
-					if (pos != std::string::npos)
+					posdur = request.find("?duration=");
+					eDebug("[eDVBServiceStream] stream ref: %s", serviceref.c_str());
+					if (posdur != std::string::npos)
+					{
+						if (eDVBServiceStream::start(serviceref.c_str(), streamFd) >= 0)
+						{
+							running = true;
+							m_serviceref = serviceref;
+							m_useencoder = false;
+						}
+						int timeout = 0;
+						sscanf(request.substr(posdur).c_str(), "?duration=%d", &timeout);
+						eDebug("[eDVBServiceStream] duration: %d seconds", timeout);
+						if (timeout)
+						{
+							m_timeout->startLongTimer(timeout);
+						}
+					}
+					else if (pos != std::string::npos)
 					{
 						/* we need to stream transcoded data */
 						int bitrate = 1024 * 1024;
@@ -183,6 +204,7 @@ void eStreamClient::notifier(int what)
 						int framerate = 25000;
 						int interlaced = 0;
 						int aspectratio = 0;
+						std::string vcodec, acodec;
 						sscanf(request.substr(pos).c_str(), "?bitrate=%d", &bitrate);
 						pos = request.find("?width=");
 						if (pos != std::string::npos)
@@ -199,9 +221,29 @@ void eStreamClient::notifier(int what)
 						pos = request.find("?aspectratio=");
 						if (pos != std::string::npos)
 							sscanf(request.substr(pos).c_str(), "?aspectratio=%d", &aspectratio);
+						pos = request.find("?vcodec=");
+						if (pos != std::string::npos)
+						{
+							vcodec = request.substr(pos + 8);
+							pos = vcodec.find('?');
+							if (pos != std::string::npos)
+							{
+								vcodec = vcodec.substr(0, pos);
+							}
+						}
+						pos = request.find("?acodec=");
+						if (pos != std::string::npos)
+						{
+							acodec = request.substr(pos + 8);
+							pos = acodec.find('?');
+							if (pos != std::string::npos)
+							{
+								acodec = acodec.substr(0, pos);
+							}
+						}
 						encoderFd = -1;
 						if (eEncoder::getInstance())
-							encoderFd = eEncoder::getInstance()->allocateEncoder(serviceref, bitrate, width, height, framerate, !!interlaced, aspectratio);
+							encoderFd = eEncoder::getInstance()->allocateEncoder(serviceref, bitrate, width, height, framerate, !!interlaced, aspectratio, vcodec, acodec);
 						if (encoderFd >= 0)
 						{
 							running = true;

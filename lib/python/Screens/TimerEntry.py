@@ -5,9 +5,8 @@ from Components.config import config, ConfigSelection, ConfigText, ConfigSubList
 from Components.ActionMap import NumberActionMap
 from Components.ConfigList import ConfigListScreen
 from Components.MenuList import MenuList
-from Components.Button import Button
+from Components.Sources.StaticText import StaticText
 from Components.Label import Label
-from Components.Pixmap import Pixmap
 from Components.SystemInfo import SystemInfo
 from Components.UsageConfig import defaultMoviePath
 from Screens.MovieSelection import getPreferredTagEditor
@@ -28,12 +27,10 @@ class TimerEntry(Screen, ConfigListScreen):
 		self.entryDate = None
 		self.entryService = None
 
-		self["oktext"] = Label(_("OK"))
-		self["canceltext"] = Label(_("Cancel"))
-		self["ok"] = Pixmap()
-		self["cancel"] = Pixmap()
-		self["key_yellow"] = Label(_("Timer type"))
-		self["key_blue"] = Label()
+		self["key_red"] = StaticText(_("Cancel"))
+		self["key_green"] = StaticText(_("Save"))
+		self["key_yellow"] = StaticText(_("Timer type"))
+		self["key_blue"] = StaticText("")
 
 		self.createConfig()
 
@@ -46,6 +43,8 @@ class TimerEntry(Screen, ConfigListScreen):
 			"volumeDown": self.decrementStart,
 			"size+": self.incrementEnd,
 			"size-": self.decrementEnd,
+			"red": self.keyCancel,
+			"green": self.keyGo,
 			"yellow": self.changeTimerType,
 			"blue": self.changeZapWakeupType
 		}, -2)
@@ -56,111 +55,99 @@ class TimerEntry(Screen, ConfigListScreen):
 		self.createSetup("config")
 
 	def createConfig(self):
-			justplay = self.timer.justplay
-			always_zap = self.timer.always_zap
-			zap_wakeup = self.timer.zap_wakeup
-			rename_repeat = self.timer.rename_repeat
-			conflict_detection = self.timer.conflict_detection
+		justplay = self.timer.justplay
+		always_zap = self.timer.always_zap
+		zap_wakeup = self.timer.zap_wakeup
+		pipzap = self.timer.pipzap
+		rename_repeat = self.timer.rename_repeat
+		conflict_detection = self.timer.conflict_detection
+		config.movielist.videodirs.load()
 
-			afterevent = {
-				AFTEREVENT.NONE: "nothing",
-				AFTEREVENT.DEEPSTANDBY: "deepstandby",
-				AFTEREVENT.STANDBY: "standby",
-				AFTEREVENT.AUTO: "auto"
-				}[self.timer.afterEvent]
+		afterevent = {
+			AFTEREVENT.NONE: "nothing",
+			AFTEREVENT.DEEPSTANDBY: "deepstandby",
+			AFTEREVENT.STANDBY: "standby",
+			AFTEREVENT.AUTO: "auto"
+			}[self.timer.afterEvent]
 
-			if self.timer.record_ecm and self.timer.descramble:
-				recordingtype = "descrambled+ecm"
-			elif self.timer.record_ecm:
-				recordingtype = "scrambled+ecm"
-			elif self.timer.descramble:
-				recordingtype = "normal"
+		if self.timer.record_ecm and self.timer.descramble:
+			recordingtype = "descrambled+ecm"
+		elif self.timer.record_ecm:
+			recordingtype = "scrambled+ecm"
+		elif self.timer.descramble:
+			recordingtype = "normal"
 
-			weekday_table = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+		weekday_table = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
-			# calculate default values
-			day = []
-			weekday = 0
-			for x in (0, 1, 2, 3, 4, 5, 6):
-				day.append(0)
-			if self.timer.repeated: # repeated
-				type = "repeated"
-				if (self.timer.repeated == 31): # Mon-Fri
-					repeated = "weekdays"
-				elif (self.timer.repeated == 127): # daily
-					repeated = "daily"
-				else:
-					flags = self.timer.repeated
-					repeated = "user"
-					count = 0
-					for x in (0, 1, 2, 3, 4, 5, 6):
-						if flags == 1: # weekly
-							print "Set to weekday " + str(x)
-							weekday = x
-						if flags & 1 == 1: # set user defined flags
-							day[x] = 1
-							count += 1
-						else:
-							day[x] = 0
-						flags >>= 1
-					if count == 1:
-						repeated = "weekly"
-			else: # once
-				type = "once"
-				repeated = None
-				weekday = int(strftime("%u", localtime(self.timer.begin))) - 1
-				day[weekday] = 1
-
-			self.timerentry_justplay = ConfigSelection(choices = [
-				("zap", _("zap")), ("record", _("record")), ("zap+record", _("zap and record"))],
-				default = {0: "record", 1: "zap", 2: "zap+record"}[justplay + 2*always_zap])
-			if SystemInfo["DeepstandbySupport"]:
-				shutdownString = _("go to deep standby")
-				choicelist = [("always", _("always")), ("from_standby", _("only from standby")), ("from_deep_standby", _("only from deep standby")), ("never", _("never"))]
+		day = list([int(x) for x in reversed('{0:07b}'.format(self.timer.repeated))])
+		weekday = 0
+		if self.timer.repeated: # repeated
+			type = "repeated"
+			if (self.timer.repeated == 31): # Mon-Fri
+				repeated = "weekdays"
+			elif (self.timer.repeated == 127): # daily
+				repeated = "daily"
 			else:
-				shutdownString = _("shut down")
-				choicelist = [("always", _("always")), ("never", _("never"))]
-			self.timerentry_zapwakeup = ConfigSelection(choices = choicelist, default = zap_wakeup)
-			self.timerentry_afterevent = ConfigSelection(choices = [("nothing", _("do nothing")), ("standby", _("go to standby")), ("deepstandby", shutdownString), ("auto", _("auto"))], default = afterevent)
-			self.timerentry_recordingtype = ConfigSelection(choices = [("normal", _("normal")), ("descrambled+ecm", _("descramble and record ecm")), ("scrambled+ecm", _("don't descramble, record ecm"))], default = recordingtype)
-			self.timerentry_type = ConfigSelection(choices = [("once",_("once")), ("repeated", _("repeated"))], default = type)
-			self.timerentry_name = ConfigText(default = self.timer.name, visible_width = 50, fixed_size = False)
-			self.timerentry_description = ConfigText(default = self.timer.description, visible_width = 50, fixed_size = False)
-			self.timerentry_tags = self.timer.tags[:]
-			self.timerentry_tagsset = ConfigSelection(choices = [not self.timerentry_tags and "None" or " ".join(self.timerentry_tags)])
+				repeated = "user"
+				if day.count(1) == 1:
+					repeated = "weekly"
+					weekday = day.index(1)
+		else: # once
+			type = "once"
+			repeated = None
+			weekday = int(strftime("%u", localtime(self.timer.begin))) - 1
+			day[weekday] = 1
 
-			self.timerentry_repeated = ConfigSelection(default = repeated, choices = [("weekly", _("weekly")), ("daily", _("daily")), ("weekdays", _("Mon-Fri")), ("user", _("user defined"))])
-			self.timerentry_renamerepeat = ConfigYesNo(default = rename_repeat)
+		self.timerentry_justplay = ConfigSelection(choices = [
+			("zap", _("zap")), ("record", _("record")), ("zap+record", _("zap and record"))],
+			default = {0: "record", 1: "zap", 2: "zap+record"}[justplay + 2*always_zap])
+		if SystemInfo["DeepstandbySupport"]:
+			shutdownString = _("go to deep standby")
+			choicelist = [("always", _("always")), ("from_standby", _("only from standby")), ("from_deep_standby", _("only from deep standby")), ("never", _("never"))]
+		else:
+			shutdownString = _("shut down")
+			choicelist = [("always", _("always")), ("never", _("never"))]
+		self.timerentry_zapwakeup = ConfigSelection(choices = choicelist, default = zap_wakeup)
+		self.timerentry_afterevent = ConfigSelection(choices = [("nothing", _("do nothing")), ("standby", _("go to standby")), ("deepstandby", shutdownString), ("auto", _("auto"))], default = afterevent)
+		self.timerentry_recordingtype = ConfigSelection(choices = [("normal", _("normal")), ("descrambled+ecm", _("descramble and record ecm")), ("scrambled+ecm", _("don't descramble, record ecm"))], default = recordingtype)
+		self.timerentry_type = ConfigSelection(choices = [("once",_("once")), ("repeated", _("repeated"))], default = type)
+		self.timerentry_name = ConfigText(default = self.timer.name, visible_width = 50, fixed_size = False)
+		self.timerentry_description = ConfigText(default = self.timer.description, visible_width = 50, fixed_size = False)
+		self.timerentry_tags = self.timer.tags[:]
+		self.timerentry_tagsset = ConfigSelection(choices = [not self.timerentry_tags and "None" or " ".join(self.timerentry_tags)])
 
-			self.timerentry_conflictdetection = ConfigYesNo(default = conflict_detection)
+		self.timerentry_repeated = ConfigSelection(default = repeated, choices = [("weekly", _("weekly")), ("daily", _("daily")), ("weekdays", _("Mon-Fri")), ("user", _("user defined"))])
+		self.timerentry_renamerepeat = ConfigYesNo(default = rename_repeat)
+		self.timerentry_pipzap = ConfigYesNo(default = pipzap)
+		self.timerentry_conflictdetection = ConfigYesNo(default = conflict_detection)
 
-			self.timerentry_date = ConfigDateTime(default = self.timer.begin, formatstring = _("%d.%B %Y"), increment = 86400)
-			self.timerentry_starttime = ConfigClock(default = self.timer.begin)
-			self.timerentry_endtime = ConfigClock(default = self.timer.end)
-			self.timerentry_showendtime = ConfigSelection(default = ((self.timer.end - self.timer.begin) > 4), choices = [(True, _("yes")), (False, _("no"))])
+		self.timerentry_date = ConfigDateTime(default = self.timer.begin, formatstring = _("%d.%B %Y"), increment = 86400)
+		self.timerentry_starttime = ConfigClock(default = self.timer.begin)
+		self.timerentry_endtime = ConfigClock(default = self.timer.end)
+		self.timerentry_showendtime = ConfigSelection(default = ((self.timer.end - self.timer.begin) > 4), choices = [(True, _("yes")), (False, _("no"))])
 
-			default = self.timer.dirname or defaultMoviePath()
-			tmp = config.movielist.videodirs.value
-			if default not in tmp:
-				tmp.append(default)
-			self.timerentry_dirname = ConfigSelection(default = default, choices = tmp)
+		default = self.timer.dirname or defaultMoviePath()
+		tmp = config.movielist.videodirs.value
+		if default not in tmp:
+			tmp.append(default)
+		self.timerentry_dirname = ConfigSelection(default = default, choices = tmp)
 
-			self.timerentry_repeatedbegindate = ConfigDateTime(default = self.timer.repeatedbegindate, formatstring = _("%d.%B %Y"), increment = 86400)
+		self.timerentry_repeatedbegindate = ConfigDateTime(default = self.timer.repeatedbegindate, formatstring = _("%d.%B %Y"), increment = 86400)
 
-			self.timerentry_weekday = ConfigSelection(default = weekday_table[weekday], choices = [("mon",_("Monday")), ("tue", _("Tuesday")), ("wed",_("Wednesday")), ("thu", _("Thursday")), ("fri", _("Friday")), ("sat", _("Saturday")), ("sun", _("Sunday"))])
+		self.timerentry_weekday = ConfigSelection(default = weekday_table[weekday], choices = [("mon",_("Monday")), ("tue", _("Tuesday")), ("wed",_("Wednesday")), ("thu", _("Thursday")), ("fri", _("Friday")), ("sat", _("Saturday")), ("sun", _("Sunday"))])
 
-			self.timerentry_day = ConfigSubList()
-			for x in (0, 1, 2, 3, 4, 5, 6):
-				self.timerentry_day.append(ConfigYesNo(default = day[x]))
+		self.timerentry_day = ConfigSubList()
+		for x in (0, 1, 2, 3, 4, 5, 6):
+			self.timerentry_day.append(ConfigYesNo(default = day[x]))
 
-			# FIXME some service-chooser needed here
-			servicename = "N/A"
-			try: # no current service available?
-				servicename = str(self.timer.service_ref.getServiceName())
-			except:
-				pass
-			self.timerentry_service_ref = self.timer.service_ref
-			self.timerentry_service = ConfigSelection([servicename])
+		# FIXME some service-chooser needed here
+		servicename = "N/A"
+		try: # no current service available?
+			servicename = str(self.timer.service_ref.getServiceName())
+		except:
+			pass
+		self.timerentry_service_ref = self.timer.service_ref
+		self.timerentry_service = ConfigSelection([servicename])
 
 	def createSetup(self, widget):
 		self.list = []
@@ -209,6 +196,8 @@ class TimerEntry(Screen, ConfigListScreen):
 		self.entryZapWakeup = getConfigListEntry(_("Wakeup receiver for start timer"), self.timerentry_zapwakeup)
 		if self.timerentry_justplay.value == "zap":
 			self.list.append(self.entryZapWakeup)
+			if SystemInfo["PIPAvailable"]:
+				self.list.append(getConfigListEntry(_("Use as PiP if possible"), self.timerentry_pipzap))
 			self.list.append(self.entryShowEndTime)
 			self["key_blue"].setText(_("Wakeup type"))
 		else:
@@ -307,7 +296,7 @@ class TimerEntry(Screen, ConfigListScreen):
 				_("Select channel to record from"),
 				currentBouquet=True
 			)
-		elif config.usage.setup_level.index >= 2 and cur == self.dirname:
+		elif cur == self.dirname:
 			menu = [(_("Open select location"), "empty")]
 			if self.timerentry_type.value == "repeated" and self.timerentry_name.value:
 				menu.append((_("Open select location as timer name"), "timername"))
@@ -377,6 +366,7 @@ class TimerEntry(Screen, ConfigListScreen):
 		self.timer.justplay = self.timerentry_justplay.value == "zap"
 		self.timer.always_zap = self.timerentry_justplay.value == "zap+record"
 		self.timer.zap_wakeup = self.timerentry_zapwakeup.value
+		self.timer.pipzap = self.timerentry_pipzap.value
 		self.timer.rename_repeat = self.timerentry_renamerepeat.value
 		self.timer.conflict_detection = self.timerentry_conflictdetection.value
 		if self.timerentry_justplay.value == "zap":
@@ -531,10 +521,10 @@ class TimerLog(Screen):
 		self["loglist"] = MenuList(self.list)
 		self["logentry"] = Label()
 
-		self["key_red"] = Button(_("Delete entry"))
-		self["key_green"] = Button()
-		self["key_yellow"] = Button("")
-		self["key_blue"] = Button(_("Clear log"))
+		self["key_red"] = StaticText(_("Delete entry"))
+		self["key_green"] = StaticText("")
+		self["key_yellow"] = StaticText("")
+		self["key_blue"] = StaticText(_("Clear log"))
 
 		self.onShown.append(self.updateText)
 

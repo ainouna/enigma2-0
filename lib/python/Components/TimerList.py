@@ -1,18 +1,16 @@
-from HTMLComponent import HTMLComponent
 from GUIComponent import GUIComponent
 from skin import parseFont
 
 from Tools.FuzzyDate import FuzzyTime
 
-from enigma import eListboxPythonMultiContent, eListbox, gFont, getBestPlayableServiceReference, eServiceReference, \
-	RT_HALIGN_LEFT, RT_HALIGN_RIGHT, RT_VALIGN_TOP, RT_VALIGN_BOTTOM
+from enigma import eListboxPythonMultiContent, eListbox, gFont, getBestPlayableServiceReference, eServiceReference, RT_HALIGN_LEFT, RT_HALIGN_RIGHT, RT_VALIGN_TOP, RT_VALIGN_BOTTOM
 from Tools.Alternatives import GetWithAlternative
 from Tools.LoadPixmap import LoadPixmap
 from Tools.TextBoundary import getTextBoundarySize
 from timer import TimerEntry
 from Tools.Directories import resolveFilename, SCOPE_CURRENT_SKIN
 
-class TimerList(HTMLComponent, GUIComponent, object):
+class TimerList(GUIComponent, object):
 #
 #  | <Name of the Timer>     <Service>  |
 #  | <state>  <orb.pos.>  <start, end>  |
@@ -46,7 +44,11 @@ class TimerList(HTMLComponent, GUIComponent, object):
 			if "autotimer" in timer.flags:
 				self.iconAutoTimer and res.append((eListboxPythonMultiContent.TYPE_PIXMAP_ALPHATEST, self.iconMargin / 2, self.rowSplit + (self.itemHeight - self.rowSplit - self.iconHeight) / 2, self.iconWidth, self.iconHeight, self.iconAutoTimer))
 		if timer.justplay:
-			text = repeatedtext + ((" %s "+ _("(ZAP)")) % (begin[1]))
+			if timer.pipzap:
+				extra_text = _("(ZAP as PiP)")
+			else:
+				extra_text = _("(ZAP)")
+			text = repeatedtext + ((" %s %s") % (begin[1], extra_text))
 		else:
 			text = repeatedtext + ((" %s ... %s (%d " + _("mins") + ")") % (begin[1], FuzzyTime(timer.end)[1], (timer.end - timer.begin) / 60))
 		icon = None
@@ -177,7 +179,7 @@ class TimerList(HTMLComponent, GUIComponent, object):
 			if state in (1, 2) and not hasattr(ref, 'sref'):
 				current_ref = getBestPlayableServiceReference(ref.ref, eServiceReference())
 				if not current_ref:
-					return "N/A" + alternative
+					return _("N/A") + alternative
 				else:
 					refstr = current_ref.toString()
 			else:

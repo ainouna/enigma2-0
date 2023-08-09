@@ -3,8 +3,7 @@ import re
 from MenuList import MenuList
 from Components.Harddisk import harddiskmanager
 from Tools.Directories import SCOPE_CURRENT_SKIN, resolveFilename, fileExists
-from enigma import RT_HALIGN_LEFT, eListboxPythonMultiContent, \
-	eServiceReference, eServiceCenter, gFont
+from enigma import RT_HALIGN_LEFT, eListboxPythonMultiContent, eServiceReference, eServiceCenter, gFont
 from Tools.LoadPixmap import LoadPixmap
 import skin
 
@@ -53,6 +52,7 @@ EXTENSIONS = {
 		"m2ts": "movie",
 		"mts": "movie",
 		"ts": "movie",
+		"webm": "movie",
 	}
 
 def FileEntryComponent(name, absolute = None, isDir = False):

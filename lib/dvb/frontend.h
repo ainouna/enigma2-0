@@ -48,7 +48,7 @@ public:
 #include <lib/dvb/sec.h>
 class eSecCommandList;
 
-class eDVBFrontend: public iDVBFrontend, public Object
+class eDVBFrontend: public iDVBFrontend, public sigc::trackable
 {
 public:
 	enum {
@@ -72,7 +72,7 @@ public:
 		DICTION,              // current "diction" (0 = normal, 1 = Unicable, 2 = JESS)
 		NUM_DATA_ENTRIES
 	};
-	Signal1<void,iDVBFrontend*> m_stateChanged;
+	sigc::signal1<void,iDVBFrontend*> m_stateChanged;
 private:
 	DECLARE_REF(eDVBFrontend);
 	bool m_simulate;
@@ -87,6 +87,7 @@ private:
 	int m_dvbversion;
 	bool m_rotor_mode;
 	bool m_need_rotor_workaround;
+	bool m_blindscan;
 	bool m_multitype;
 	std::map<fe_delivery_system_t, bool> m_delsys, m_delsys_whitelist;
 	std::string m_filename;
@@ -117,7 +118,7 @@ private:
 	int tuneLoopInt();
 	void setFrontend(bool recvEvents=true);
 	bool setSecSequencePos(int steps);
-	void calculateSignalPercentage(int signalqualitydb, int &signalquality);
+	int calculateSignalPercentage(int signalqualitydb);
 	void calculateSignalQuality(int snr, int &signalquality, int &signalqualitydb);
 
 	static int PriorityOrder;
@@ -128,12 +129,12 @@ public:
 
 	int readInputpower();
 	RESULT getFrontendType(int &type);
-	RESULT tune(const iDVBFrontendParameters &where);
+	RESULT tune(const iDVBFrontendParameters &where, bool blindscan = false);
 	RESULT prepare_sat(const eDVBFrontendParametersSatellite &, unsigned int timeout);
 	RESULT prepare_cable(const eDVBFrontendParametersCable &);
 	RESULT prepare_terrestrial(const eDVBFrontendParametersTerrestrial &);
 	RESULT prepare_atsc(const eDVBFrontendParametersATSC &);
-	RESULT connectStateChange(const Slot1<void,iDVBFrontend*> &stateChange, ePtr<eConnection> &connection);
+	RESULT connectStateChange(const sigc::slot1<void,iDVBFrontend*> &stateChange, ePtr<eConnection> &connection);
 	RESULT getState(int &state);
 	RESULT setTone(int tone);
 	RESULT setVoltage(int voltage);

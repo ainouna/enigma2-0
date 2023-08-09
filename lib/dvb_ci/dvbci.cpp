@@ -154,6 +154,8 @@ eDVBCIInterfaces::eDVBCIInterfaces()
 
 	instance = this;
 	client = NULL;
+	m_stream_interface = interface_none;
+	m_stream_finish_mode = finish_none;
 
 	eDebug("[CI] scanning for common interfaces..");
 
@@ -177,11 +179,11 @@ eDVBCIInterfaces::eDVBCIInterfaces()
 	for (eSmartPtrList<eDVBCISlot>::iterator it(m_slots.begin()); it != m_slots.end(); ++it)
 		it->setSource("A");
 
-	for (int tuner_no = 0; tuner_no < (num_ci > 1 ? 26 : 2); ++tuner_no) // NOTE: this assumes tuners are A .. Z max.
+	for (int tuner_no = 0; tuner_no < 26; ++tuner_no) // NOTE: this assumes tuners are A .. Z max.
 	{
 		path.str("");
 		path.clear();
-		path << "/proc/stb/tsmux/input" << tuner_no;
+		path << "/proc/stb/tsmux/input" << tuner_no << "_choices";
 
 		if(::access(path.str().c_str(), R_OK) < 0)
 			break;
@@ -190,6 +192,38 @@ eDVBCIInterfaces::eDVBCIInterfaces()
 	}
 
 	eDebug("[CI] done, found %d common interface slots", num_ci);
+
+	if (num_ci)
+	{
+		static const char *proc_ci_choices = "/proc/stb/tsmux/ci0_input_choices";
+
+		if (CFile::contains_word(proc_ci_choices, "PVR"))	// lowest prio = PVR
+			m_stream_interface = interface_use_pvr;
+
+		if (CFile::contains_word(proc_ci_choices, "DVR"))	// low prio = DVR
+			m_stream_interface = interface_use_dvr;
+
+		if (CFile::contains_word(proc_ci_choices, "DVR0"))	// high prio = DVR0
+			m_stream_interface = interface_use_dvr;
+
+		if (m_stream_interface == interface_none)			// fallback = DVR
+		{
+			m_stream_interface = interface_use_dvr;
+			eDebug("[CI] Streaming CI routing interface not advertised, assuming DVR method");
+		}
+
+		if (CFile::contains_word(proc_ci_choices, "PVR_NONE"))	// low prio = PVR_NONE
+			m_stream_finish_mode = finish_use_pvr_none;
+
+		if (CFile::contains_word(proc_ci_choices, "NONE"))		// high prio = NONE
+			m_stream_finish_mode = finish_use_none;
+
+		if (m_stream_finish_mode == finish_none)				// fallback = "tuner"
+		{
+			m_stream_finish_mode = finish_use_tuner_a;
+			eDebug("[CI] Streaming CI finish interface not advertised, assuming \"tuner\" method");
+		}
+	}
 }
 
 eDVBCIInterfaces::~eDVBCIInterfaces()
@@ -345,7 +379,7 @@ void eDVBCIInterfaces::ciRemoved(eDVBCISlot *slot)
 		if (slot->linked_next)
 			slot->linked_next->setSource(slot->current_source);
 		else // last CI in chain
-			setInputSource(slot->current_tuner, slot->current_source);
+			setInputSource(slot->current_tuner, eDVBCISlot::getTunerLetter(slot->current_tuner));
 		slot->linked_next = 0;
 		slot->use_count=0;
 		slot->plugged=true;
@@ -586,11 +620,7 @@ void eDVBCIInterfaces::recheckPMTHandlers()
 					eDebug("[CI] (1)Slot %d, usecount now %d", ci_it->getSlotID(), ci_it->use_count);
 
 					std::stringstream ci_source;
-					ci_source << "CI";
-					if (getNumOfSlots() > 1) // Only receivers with more that 1 CI expect number after CI
-					{
-						ci_source << ci_it->getSlotID();
-					}
+					ci_source << "CI" << ci_it->getSlotID();
 
 					if (!it->cislot)
 					{
@@ -604,11 +634,44 @@ void eDVBCIInterfaces::recheckPMTHandlers()
 								eDVBFrontend *fe = (eDVBFrontend*) &(*frontend);
 								tunernum = fe->getSlotID();
 							}
+							if (tunernum != -1)
+							{
+								setInputSource(tunernum, ci_source.str());
+								ci_it->setSource(eDVBCISlot::getTunerLetter(tunernum));
+							}
+							else
+							{
+								/*
+								 * No associated frontend, this must be a DVR source
+								 *
+								 * No need to set tuner input (setInputSource), because we have no tuner.
+								 */
+
+								switch(m_stream_interface)
+								{
+									case interface_use_dvr:
+									{
+										std::stringstream source;
+										source << "DVR" << channel->getDvrId();
+										ci_it->setSource(source.str());
+										break;
+									}
+
+									case interface_use_pvr:
+									{
+										ci_it->setSource("PVR");
+										break;
+									}
+
+									default:
+									{
+										eDebug("[CI] warning: no valid CI streaming interface");
+										break;
+									}
+								}
+							}
 						}
-						ASSERT(tunernum != -1);
 						ci_it->current_tuner = tunernum;
-						setInputSource(tunernum, ci_source.str());
-						ci_it->setSource(eDVBCISlot::getTunerLetter(tunernum));
 					}
 					else
 					{
@@ -689,6 +752,45 @@ void eDVBCIInterfaces::removePMTHandler(eDVBServicePMTHandler *pmthandler)
 				caids.push_back(0xFFFF);
 				slot->sendCAPMT(pmthandler, caids);  // send a capmt without caids to remove a running service
 				slot->removeService(service_to_remove.getServiceID().get());
+
+				if (slot->current_tuner == -1)
+				{
+					// no previous tuner to go back to, signal to CI interface CI action is finished
+
+					std::string finish_source;
+
+					switch (m_stream_finish_mode)
+					{
+						case finish_use_tuner_a:
+						{
+							finish_source = "A";
+							break;
+						}
+
+						case finish_use_pvr_none:
+						{
+							finish_source = "PVR_NONE";
+							break;
+						}
+
+						case finish_use_none:
+						{
+							finish_source = "NONE";
+							break;
+						}
+
+						default:
+							(void)0;
+					}
+
+					if(finish_source == "")
+					{
+						eDebug("[CI] warning: CI streaming finish mode not set, assuming \"tuner A\"");
+						finish_source = "A";
+					}
+
+					slot->setSource(finish_source);
+				}
 			}
 
 			if (!--slot->use_count)
@@ -696,7 +798,7 @@ void eDVBCIInterfaces::removePMTHandler(eDVBServicePMTHandler *pmthandler)
 				if (slot->linked_next)
 					slot->linked_next->setSource(slot->current_source);
 				else
-					setInputSource(slot->current_tuner, slot->current_source);
+					setInputSource(slot->current_tuner, eDVBCISlot::getTunerLetter(slot->current_tuner));
 
 				if (base_slot != slot)
 				{
@@ -751,16 +853,19 @@ int eDVBCIInterfaces::getMMIState(int slotid)
 
 int eDVBCIInterfaces::setInputSource(int tuner_no, const std::string &source)
 {
-	char buf[64];
-	snprintf(buf, sizeof(buf), "/proc/stb/tsmux/input%d", tuner_no);
-
-	if (CFile::write(buf, source.c_str()) == -1)
+	if (tuner_no >= 0)
 	{
-		eDebug("[CI] eDVBCIInterfaces setInputSource for input %s failed!", source.c_str());
-		return 0;
-	}
+		char buf[64];
+		snprintf(buf, sizeof(buf), "/proc/stb/tsmux/input%d", tuner_no);
 
-	eDebug("[CI] eDVBCIInterfaces setInputSource(%d, %s)", tuner_no, source.c_str());
+		if (CFile::write(buf, source.c_str()) == -1)
+		{
+			eDebug("[CI] eDVBCIInterfaces setInputSource for input %s failed!", source.c_str());
+			return 0;
+		}
+
+		eDebug("[CI] eDVBCIInterfaces setInputSource(%d, %s)", tuner_no, source.c_str());
+	}
 	return 0;
 }
 
@@ -1306,15 +1411,7 @@ int eDVBCISlot::setSource(const std::string &source)
 {
 	char buf[64];
 	current_source = source;
-
-	if (eDVBCIInterfaces::getInstance()->getNumOfSlots() > 1) // FIXME .. we force DM8000 when more than one CI Slot is avail
-	{
-		snprintf(buf, sizeof(buf), "/proc/stb/tsmux/ci%d_input", slotid);
-	}
-	else // DM7025
-	{
-		snprintf(buf, sizeof(buf), "/proc/stb/tsmux/input2");
-	}
+	snprintf(buf, sizeof(buf), "/proc/stb/tsmux/ci%d_input", slotid);
 
 	if(CFile::write(buf, source.c_str()) == -1)
 	{

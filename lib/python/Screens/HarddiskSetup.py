@@ -14,6 +14,8 @@ class HarddiskSetup(Screen):
 		self["model"] = Label(_("Model: ") + hdd.model())
 		self["capacity"] = Label(_("Capacity: ") + hdd.capacity())
 		self["bus"] = Label(_("Bus: ") + hdd.bus())
+		self["key_red"] = Label(_("Cancel"))
+		self["key_green"] = Label(_("Save"))
 		self["initialize"] = Pixmap()
 		self["initializetext"] = Label(text)
 		self["actions"] = ActionMap(["OkCancelActions"],
@@ -53,6 +55,7 @@ class HarddiskSelection(Screen):
 			self["hddlist"] = MenuList(tlist)
 		else:
 			self["hddlist"] = MenuList(harddiskmanager.HDDList())
+		self["key_red"] = Label(_("Cancel"))
 		self["actions"] = ActionMap(["OkCancelActions"],
 		{
 			"ok": self.okbuttonClick,
@@ -77,10 +80,3 @@ class HarddiskFsckSelection(HarddiskSelection):
 			 action=selection.createCheckJob,
 			 text=_("Check"),
 			 question=_("Do you really want to check the filesystem?\nThis could take lots of time!"))
-
-class HarddiskConvertExt4Selection(HarddiskSelection):
-	def doIt(self, selection):
-		self.session.openWithCallback(self.close, HarddiskSetup, selection,
-			 action=selection.createExt4ConversionJob,
-			 text=_("Convert ext3 to ext4"),
-			 question=_("Do you really want to convert the filesystem?\nYou cannot go back!"))

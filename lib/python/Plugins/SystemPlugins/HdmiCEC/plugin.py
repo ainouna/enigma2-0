@@ -48,6 +48,7 @@ class HdmiCECSetupScreen(Screen, ConfigListScreen):
 		}, -2)
 
 		self.list = []
+		self.logpath_entry = None
 		ConfigListScreen.__init__(self, self.list, session = self.session)
 		self.createSetup()
 		self.updateAddress()
@@ -69,6 +70,7 @@ class HdmiCECSetupScreen(Screen, ConfigListScreen):
 			self.list.append(getConfigListEntry(_("Wakeup receiver from standby"), config.hdmicec.control_receiver_wakeup))
 			self.list.append(getConfigListEntry(_("Minimum send interval"), config.hdmicec.minimum_send_interval))
 			self.list.append(getConfigListEntry(_("Repeat leave standby messages"), config.hdmicec.repeat_wakeup_timer))
+			self.list.append(getConfigListEntry(_("Send 'sourceactive' before zap timers"), config.hdmicec.sourceactive_zaptimers))
 			self.list.append(getConfigListEntry(_("Detect next boxes before standby"), config.hdmicec.next_boxes_detect))
 			self.list.append(getConfigListEntry(_("Debug to file"), config.hdmicec.debug))
 			self.logpath_entry = getConfigListEntry(_("Select path for logfile"), config.hdmicec.log_path)
@@ -138,7 +140,8 @@ def main(session, **kwargs):
 	session.open(HdmiCECSetupScreen)
 
 def startSetup(menuid):
-	if menuid == "system":
+	# only show in the menu when set to intermediate or higher
+	if menuid == "video" and config.usage.setup_level.index >= 1:
 		return [(_("HDMI-CEC setup"), main, "hdmi_cec_setup", 0)]
 	return []
 
